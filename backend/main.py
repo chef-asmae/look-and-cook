@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+from .uploads import router as uploads_router
+from .uploads_db import init_db
 
 app = FastAPI(title="FastAPI + React Backend")
 DIST_DIR = Path(__file__).parent.parent / "frontend" / "dist"
@@ -30,6 +35,14 @@ def hello() -> dict[str, str]:
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+app.include_router(uploads_router)
+
+
+@app.on_event("startup")
+def startup() -> None:
+    init_db()
 
 
 app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR), check_dir=False), name="assets")
