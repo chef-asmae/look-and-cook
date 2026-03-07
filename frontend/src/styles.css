@@ -1,0 +1,29 @@
+:root {
+  font-family: Segoe UI, system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #f4f7fb;
+  color: #1b1f23;
+}
+
+.app {
+  width: min(600px, 92vw);
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+}
+
+h1 {
+  margin-top: 0;
+}
+
+.error {
+  color: #b00020;
+}
