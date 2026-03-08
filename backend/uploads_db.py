@@ -23,7 +23,10 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS uploads (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_hash TEXT NOT NULL DEFAULT '',
                 file_path TEXT NOT NULL,
+                book_title TEXT NOT NULL DEFAULT '',
+                book_author TEXT NOT NULL DEFAULT '',
                 uploaded_at TEXT NOT NULL,
                 size_bytes INTEGER NOT NULL,
                 mime_type TEXT NOT NULL DEFAULT '',
@@ -57,6 +60,9 @@ def _ensure_columns(connection: sqlite3.Connection) -> None:
     rows = connection.execute("PRAGMA table_info(uploads)").fetchall()
     existing_columns = {str(row["name"]) for row in rows}
     required_columns = {
+        "file_hash": "TEXT NOT NULL DEFAULT ''",
+        "book_title": "TEXT NOT NULL DEFAULT ''",
+        "book_author": "TEXT NOT NULL DEFAULT ''",
         "mime_type": "TEXT NOT NULL DEFAULT ''",
         "recipe_count": "INTEGER NOT NULL DEFAULT 0",
         "extracted_text_path": "TEXT NOT NULL DEFAULT ''",
@@ -67,21 +73,65 @@ def _ensure_columns(connection: sqlite3.Connection) -> None:
         if column_name not in existing_columns:
             connection.execute(f"ALTER TABLE uploads ADD COLUMN {column_name} {definition}")
 
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_uploads_file_hash ON uploads(file_hash) WHERE file_hash <> ''"
+    )
 
-def create_upload_record(
+
+def upsert_upload_record(
+    file_hash: str,
     file_path: str,
+    book_title: str,
+    book_author: str,
     uploaded_at: str,
     size_bytes: int,
     mime_type: str,
     recipe_count: int,
     extracted_text_path: str,
     notes: str,
-) -> int:
+) -> tuple[int, bool]:
     with _connect() as connection:
+        existing = connection.execute("SELECT id FROM uploads WHERE file_hash = ?", (file_hash,)).fetchone()
+
+        if existing is not None:
+            upload_id = int(existing["id"])
+            connection.execute(
+                """
+                UPDATE uploads
+                SET file_path = ?,
+                    book_title = ?,
+                    book_author = ?,
+                    uploaded_at = ?,
+                    size_bytes = ?,
+                    mime_type = ?,
+                    recipe_count = ?,
+                    extracted_text_path = ?,
+                    notes = ?
+                WHERE id = ?
+                """,
+                (
+                    file_path,
+                    book_title,
+                    book_author,
+                    uploaded_at,
+                    size_bytes,
+                    mime_type,
+                    recipe_count,
+                    extracted_text_path,
+                    notes,
+                    upload_id,
+                ),
+            )
+            connection.commit()
+            return upload_id, True
+
         cursor = connection.execute(
             """
             INSERT INTO uploads (
+                file_hash,
                 file_path,
+                book_title,
+                book_author,
                 uploaded_at,
                 size_bytes,
                 mime_type,
@@ -89,12 +139,29 @@ def create_upload_record(
                 extracted_text_path,
                 notes
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (file_path, uploaded_at, size_bytes, mime_type, recipe_count, extracted_text_path, notes),
+            (
+                file_hash,
+                file_path,
+                book_title,
+                book_author,
+                uploaded_at,
+                size_bytes,
+                mime_type,
+                recipe_count,
+                extracted_text_path,
+                notes,
+            ),
         )
         connection.commit()
-        return int(cursor.lastrowid)
+        return int(cursor.lastrowid), False
+
+
+def delete_recipe_records(upload_id: int) -> None:
+    with _connect() as connection:
+        connection.execute("DELETE FROM recipes WHERE upload_id = ?", (upload_id,))
+        connection.commit()
 
 
 def create_recipe_records(upload_id: int, created_at: str, recipes: list[dict[str, Union[str, int, list[str]]]]) -> None:
@@ -137,7 +204,8 @@ def list_upload_records() -> list[dict[str, Union[str, int]]]:
     with _connect() as connection:
         rows = connection.execute(
             """
-            SELECT id, file_path, uploaded_at, size_bytes, mime_type, recipe_count, extracted_text_path, notes
+            SELECT
+                id, file_hash, file_path, book_title, book_author, uploaded_at, size_bytes, mime_type, recipe_count, extracted_text_path, notes
             FROM uploads
             ORDER BY id DESC
             """
@@ -146,7 +214,10 @@ def list_upload_records() -> list[dict[str, Union[str, int]]]:
     return [
         {
             "id": int(row["id"]),
+            "file_hash": str(row["file_hash"] or ""),
             "file_path": str(row["file_path"]),
+            "book_title": str(row["book_title"] or ""),
+            "book_author": str(row["book_author"] or ""),
             "uploaded_at": str(row["uploaded_at"]),
             "size_bytes": int(row["size_bytes"]),
             "mime_type": str(row["mime_type"] or ""),
@@ -229,3 +300,63 @@ def get_recipe_by_id(recipe_id: int) -> dict[str, Union[str, int, list[str]]] | 
         "score": int(row["score"]),
         "created_at": str(row["created_at"]),
     }
+
+
+def list_books(limit: int = 200) -> list[dict[str, Union[str, int]]]:
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                file_hash,
+                file_path,
+                book_title,
+                book_author,
+                uploaded_at,
+                recipe_count
+            FROM uploads
+            ORDER BY uploaded_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    return [
+        {
+            "upload_id": int(row["id"]),
+            "file_hash": str(row["file_hash"] or ""),
+            "file_path": str(row["file_path"] or ""),
+            "book_title": str(row["book_title"] or ""),
+            "book_author": str(row["book_author"] or ""),
+            "uploaded_at": str(row["uploaded_at"] or ""),
+            "recipe_count": int(row["recipe_count"] or 0),
+        }
+        for row in rows
+    ]
+
+
+def list_recipes_for_upload(upload_id: int) -> list[dict[str, Union[str, int]]]:
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT id, upload_id, title, book_name, page_number, preview, score, created_at
+            FROM recipes
+            WHERE upload_id = ?
+            ORDER BY page_number ASC, score DESC, id ASC
+            """,
+            (upload_id,),
+        ).fetchall()
+
+    return [
+        {
+            "id": int(row["id"]),
+            "upload_id": int(row["upload_id"]),
+            "title": str(row["title"]),
+            "book_name": str(row["book_name"]),
+            "page_number": int(row["page_number"]),
+            "preview": str(row["preview"]),
+            "score": int(row["score"]),
+            "created_at": str(row["created_at"]),
+        }
+        for row in rows
+    ]
