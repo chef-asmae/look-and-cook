@@ -28,6 +28,26 @@ h2 {
   margin-bottom: 8px;
 }
 
+h3 {
+  margin-bottom: 8px;
+}
+
+.top-nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.top-nav button {
+  background: #dbe7f0;
+  color: #14324a;
+}
+
+.top-nav .nav-active {
+  background: #0e639c;
+  color: #fff;
+}
+
 .hint {
   color: #4a5560;
 }
@@ -72,6 +92,28 @@ button:disabled {
 ul {
   margin: 0;
   padding-left: 20px;
-  max-height: 220px;
+  max-height: 260px;
   overflow: auto;
+}
+
+li {
+  margin-bottom: 10px;
+}
+
+.recipe-list {
+  margin-top: 6px;
+  padding-left: 4px;
+}
+
+.actions {
+  margin-top: 18px;
+}
+
+.link-button {
+  background: transparent;
+  color: #0e639c;
+  padding: 0;
+  border: 0;
+  text-decoration: underline;
+  cursor: pointer;
 }

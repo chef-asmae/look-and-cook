@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .recipes import router as recipes_router
 from .uploads import router as uploads_router
 from .uploads_db import init_db
 
@@ -38,6 +39,7 @@ def health() -> dict[str, str]:
 
 
 app.include_router(uploads_router)
+app.include_router(recipes_router)
 
 
 @app.on_event("startup")
